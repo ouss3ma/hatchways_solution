@@ -1,0 +1,68 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Oct 31 11:35:50 2021
+
+@author: ouss3ma
+"""
+
+
+import pandas as pd
+
+
+
+def convert_csv_to_json(courses, students, tests, marks):
+    
+
+    courses.rename({'name':'course_name', 'id':'course_id'}, axis=1, inplace=True)
+    students.rename({'name':'student_name', 'id':'student_id'}, axis=1, inplace=True)
+    tests.rename({'id':'test_id'}, axis=1, inplace=True)
+    
+    courses_tests = pd.merge(courses, tests, on='course_id')
+    courses_tests_marks = pd.merge(courses_tests, marks, on='test_id')
+    courses_tests_marks_students = pd.merge(courses_tests_marks, students, \
+                                            on='student_id')
+    
+    courses_tests_marks_students = courses_tests_marks_students\
+                            .sort_values(by=['student_id','course_id'])
+    
+    courses_tests_marks_students['test_weighted_mark'] = \courses_tests_marks_students['mark'] * \
+                            courses_tests_marks_students['weight'] / 100
+
+    courses_tests_marks_students.drop(['test_id', 'mark', 'weight'], axis=1, inplace=True)
+    
+    #calculate the courseAverage for each student
+    df_grpby = courses_tests_marks_students.groupby(['student_id','course_id'], as_index=True).sum()
+    courses_tests_marks_students.drop(['test_weighted_mark'], axis=1, inplace=True)
+    courses_tests_marks_students = pd.merge(courses_tests_marks_students, \
+                                            df_grpby, on=['student_id', 'course_id'])  
+    courses_tests_marks_students.rename({'test_weighted_mark':'courseAverage'}, axis=1, inplace=True)
+    
+    #calculate the totalAverage for each student 
+    df_grpby = df_grpby.groupby(['student_id'], as_index=True).mean()
+    courses_tests_marks_students = pd.merge(courses_tests_marks_students, df_grpby, on='student_id')
+    courses_tests_marks_students.rename({'test_weighted_mark':'totalAverage'}, axis=1, inplace=True)
+    
+    courses_tests_marks_students=courses_tests_marks_students.round(decimals=2)
+    courses_tests_marks_students = courses_tests_marks_students.drop_duplicates()
+    
+    grpby_students = courses_tests_marks_students.groupby('student_id').apply(lambda x: x.to_dict('r'))
+    
+    #create json obj
+    json_out = {}
+    json_out['students'] = []
+    for student in range (grpby_students.size):
+        json_out["students"].append({
+                "id" : grpby_students.iloc[student][0]['student_id'],
+                "name" : grpby_students.iloc[student][0]['student_name'],
+                "totalAverage" : grpby_students.iloc[student][0]['totalAverage'],
+                "courses" : []
+                })
+        for course in range (len(grpby_students.iloc[student])):
+            json_out["students"][student]["courses"].append({
+                    "id" : grpby_students.iloc[student][course]['course_id'],
+                    "name" : grpby_students.iloc[student][course]['course_name'],
+                    "teacher" : grpby_students.iloc[student][course]['teacher'],
+                    "courseAverage" : grpby_students.iloc[student][course]['courseAverage']
+                    })
+    
+    return json_out
